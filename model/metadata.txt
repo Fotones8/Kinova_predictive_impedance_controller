@@ -1,0 +1,12 @@
+n_dof=3
+n_steps=100
+num_basis=10
+std_bf=-1
+mean_duration_s=3.21694
+sg_window=9
+sg_poly_order=4
+obs_pos_noise_var=0.0001
+obs_vel_noise_var=0.01
+goal_pos_noise_var=1e-06
+goal_vel_noise_var=0.01
+n_demos=60
