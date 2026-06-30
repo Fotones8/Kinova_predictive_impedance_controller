@@ -28,7 +28,7 @@
   </component>
   <component name="CMakeSettings">
     <configurations>
-      <configuration PROFILE_NAME="Debug" ENABLED="true" CONFIG_NAME="Debug" GENERATION_OPTIONS="-DCMAKE_TOOLCHAIN_FILE=&quot;C:\Imperial\Final project\vcpkg\vcpkg\scripts\buildsystems\vcpkg.cmake&quot;" />
+      <configuration PROFILE_NAME="Release" ENABLED="true" CONFIG_NAME="Release" GENERATION_OPTIONS="-DCMAKE_TOOLCHAIN_FILE=&quot;C:\Imperial\Final project\vcpkg\vcpkg\scripts\buildsystems\vcpkg.cmake&quot;" />
     </configurations>
   </component>
   <component name="ChangeListManager">
@@ -41,7 +41,7 @@
   <component name="ClangdSettings">
     <option name="formatViaClangd" value="false" />
   </component>
-  <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Debug" />
+  <component name="ExecutionTargetManager" SELECTED_TARGET="CMakeBuildProfile:Release" />
   <component name="MacroExpansionManager">
     <option name="directoryName" value="MdKPvi0L" />
   </component>
@@ -88,30 +88,30 @@
   }
 }</component>
   <component name="RunManager" selected="CMake Application.promp_rt">
-    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="Unnamed" type="CMakeListConfigurationType" factoryName="CMakeListConfigurationFactory">
       <method v="2" />
     </configuration>
-    <configuration name="extended_promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="extended_promp" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="extended_promp">
+    <configuration default="true" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="promp" CONFIG_NAME="Debug">
+    <configuration name="extended_promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="extended_promp" CONFIG_NAME="Release" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="extended_promp">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="promp_rt" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="predict &quot;C:\Imperial\Final project\ProMP_realtime_Jorge-main\model&quot; --input &quot;C:\Imperial\Final project\ProMP_realtime_Jorge-main\results\obs.txt&quot; --max-obs 2" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="promp_rt" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="promp_rt">
+    <configuration name="promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="promp" CONFIG_NAME="Release">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
     </configuration>
-    <configuration name="simple_promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="simple_promp" CONFIG_NAME="Debug" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="simple_promp">
+    <configuration name="promp_rt" type="CMakeRunConfiguration" factoryName="Application" PROGRAM_PARAMS="predict &quot;C:\Imperial\Final project\ProMP_realtime_Jorge-main\model&quot; --input &quot;C:\Imperial\Final project\ProMP_realtime_Jorge-main\results\obs.txt&quot; --max-obs 1" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="promp_rt" CONFIG_NAME="Release" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="promp_rt">
+      <method v="2">
+        <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
+      </method>
+    </configuration>
+    <configuration name="simple_promp" type="CMakeRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true" PROJECT_NAME="promp_realtime" TARGET_NAME="simple_promp" CONFIG_NAME="Release" RUN_TARGET_PROJECT_NAME="promp_realtime" RUN_TARGET_NAME="simple_promp">
       <method v="2">
         <option name="com.jetbrains.cidr.execution.CidrBuildBeforeRunTaskProvider$BuildBeforeRunTask" enabled="true" />
       </method>
@@ -141,6 +141,7 @@
       <workItem from="1782584363030" duration="590000" />
       <workItem from="1782738079093" duration="1282000" />
       <workItem from="1782739395463" duration="10561000" />
+      <workItem from="1782822880138" duration="1275000" />
     </task>
     <servers />
   </component>

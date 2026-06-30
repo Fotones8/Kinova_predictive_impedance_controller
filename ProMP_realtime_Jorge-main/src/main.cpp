@@ -47,6 +47,7 @@
 #include "prediction.hpp"
 
 #include <fstream>
+#include <chrono>
 // ============================================================
 // Argument helpers
 // ============================================================
@@ -379,10 +380,14 @@ static int run_predict(const std::vector<std::string>& args)
             continue;
         }
 
+        auto t_start = std::chrono::high_resolution_clock::now();
         promp_rt::PredictionResult result =
             predictor.update_and_predict(
                 time_s, pos_buf, mode, n_future_steps, target_pos);
-        print_result(result);
+        auto t_end = std::chrono::high_resolution_clock::now();
+        double us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
+        std::cout << result.n_obs_used << "," << us << "\n";
+        //print_result(result);
     }
 
     return 0;

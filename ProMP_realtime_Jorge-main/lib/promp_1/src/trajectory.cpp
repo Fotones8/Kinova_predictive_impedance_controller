@@ -14,6 +14,7 @@
 //
 
 #include <promp/trajectory.hpp>
+#include <cassert>
 
 #include <iostream>
 #include <stdexcept>
