@@ -386,7 +386,7 @@ static int run_predict(const std::vector<std::string>& args)
                 time_s, pos_buf, mode, n_future_steps, target_pos);
         auto t_end = std::chrono::high_resolution_clock::now();
         double us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
-        std::cout << result.n_obs_used << "," << us << "\n";
+        //std::cout << result.n_obs_used << "," << us << "\n";
         //print_result(result);
     }
 

@@ -458,10 +458,14 @@ PredictionResult OnlinePredictor::predict(
                 sg_filter_deriv(time_slice, pos_buf_d,
                                 im.meta.sg_window,
                                 im.meta.sg_poly_order);
-            //std::cout << "velOut \n";
-        }
-    }
 
+            std::cout << vel_buf[d][vel_buf[0].size()-1] << ",";
+
+        }
+        std::cout <<"\n";
+    }
+    
+    //std::cout << vel_buf[0].size() << "\n";
     // ── 4. Bayesian via-point conditioning ────────────────────────────────
     // For each selected observation:
     //   - Map elapsed time → phase step (time-based, rate-independent).
