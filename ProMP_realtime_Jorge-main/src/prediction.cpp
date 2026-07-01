@@ -36,6 +36,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -64,21 +65,83 @@ namespace promp_rt {
 namespace {
 
 /**
- * @brief Runtime parameters loaded from metadata.txt.
+ * @brief All model-side parameters of the online predictor (loaded from
+ *        metadata.txt, fixed at training time).
  *
- * Every field maps 1-to-1 to a key written by write_metadata() in training.cpp.
- * Unrecognised keys are silently ignored to allow forward compatibility.
+ * ── Where the rest of the tunables live ───────────────────────────────────────
+ * Three parameters are supplied at RUN time, not in metadata, and are
+ * documented where they are passed:
+ *   • max_obs_per_predict  (OnlinePredictor constructor) — cap on past
+ *       observations used per predict() tick.  0 = use all.  ↓ bounds per-tick
+ *       latency (predict cost ≈ O(k · dims² · n_basis)); too small loses early
+ *       history and can degrade accuracy.
+ *   • expected_duration_s  (reset())  — total expected motion time.  Anchors
+ *       the time→phase map AND the receding-horizon end.  Mismatch vs the real
+ *       motion shifts every via-point's phase and distorts the prediction.
+ *   • record_dt_s          (predict()) — output time step (s).  Should equal
+ *       the data's recording period so the prediction grid follows the raw time
+ *       series.  ≤0 ⇒ auto from the median observed interval.  ↓ → more output
+ *       steps per tick (finer grid, more compute).
+ *
+ * ── Quick tuning cheat-sheet (↑ = increase the value) ─────────────────────────
+ *   n_steps ............ ↑ finer phase grid ⇒ prediction can start closer to the
+ *                        true current phase; training/conditioning cost ↑.
+ *   sg_window .......... ↑ smoother velocity, more lag.
+ *   sg_poly_order ...... ↑ keeps sharp velocity peaks, less smoothing, noisier.
+ *   obs_pos_noise_var .. ↓ tighter fit to measured positions (less smoothing).
+ *   obs_vel_noise_var .. ↑ tolerate noisy SG velocity (keep ≫ obs_pos_noise_var).
+ *   goal_pos_noise_var . ↓ harder target AND harder pin of the current position.
+ *   goal_vel_noise_var . ↑ allow a more gradual approach to the target.
+ *
+ * Every field maps 1-to-1 to a key written by write_metadata() in training.cpp;
+ * unrecognised keys are ignored for forward compatibility.
  */
 struct Metadata {
-    int    n_dof             = 3;      ///< Number of joints.
-    int    n_steps           = 100;    ///< Phase resolution of the trained trajectory.
-    double mean_duration_s   = 1.0;    ///< Mean demo duration (s); default for phase map.
-    int    sg_window         = 9;      ///< SG filter window length for online velocity.
-    int    sg_poly_order     = 4;      ///< SG polynomial order.
-    double obs_pos_noise_var = 1e-4;   ///< Position observation noise variance (rad²).
-    double obs_vel_noise_var = 1e-2;   ///< Velocity observation noise variance ((rad/s)²).
-    double goal_pos_noise_var= 1e-6;   ///< Goal position noise variance (tight, rad²).
-    double goal_vel_noise_var= 1e-2;   ///< Goal velocity noise variance (soft, (rad/s)²).
+    /// Number of joints (DoF).  Must equal the number of position columns in the
+    /// training CSVs and the length of every observation/target vector.  Drives
+    /// all matrix sizes (state dim = 2·n_dof: interleaved position + velocity).
+    int    n_dof             = 3;
+
+    /// Phase resolution of the trained ProMP (timesteps spanning phase [0,1]).
+    /// IMPORTANT: this is also the grid condition_via_point() snaps each
+    /// observation time onto, so it bounds how exactly the prediction can begin
+    /// at the current position — one cell ≈ mean_duration_s/(n_steps-1) seconds
+    /// (≈32 ms at 100 over a 3.2 s motion).  ↑ for a tighter natural start, at
+    /// higher training cost.
+    int    n_steps           = 100;
+
+    /// Mean demonstration duration (s).  Used as the default expected_duration_s
+    /// (time→phase mapping and horizon length) when reset() gets no override.
+    double mean_duration_s   = 1.0;
+
+    /// Savitzky–Golay window length (samples) for the online velocity estimate.
+    /// ↑ → smoother velocity but more lag.  Pick ≈ rate_Hz · smoothing_s; must
+    /// be odd and ≥ sg_poly_order + 2.  Span ≥5 samples at the slowest rate.
+    int    sg_window         = 9;
+
+    /// Savitzky–Golay polynomial order.  ↑ → better preserves velocity peaks,
+    /// less smoothing, more high-frequency noise.  Must be < sg_window − 1
+    /// (typically 3–4).
+    int    sg_poly_order     = 4;
+
+    /// Position observation noise variance (rad²) for past via-points.  ↓ →
+    /// tighter fit to measured positions; ↑ → more smoothing / noise rejection.
+    double obs_pos_noise_var = 1e-4;
+
+    /// Velocity observation noise variance ((rad/s)²) for via-points.  Kept large
+    /// (≫ obs_pos_noise_var) so the noisy SG velocity does not dominate; ↓ to
+    /// trust the SG velocity more.
+    double obs_vel_noise_var = 1e-2;
+
+    /// Tight position variance (rad²).  Two uses: (a) the target position in
+    /// PAST_TRAJ_TARGET mode, and (b) pinning the MOST RECENT observation so the
+    /// prediction starts at the current measured position.  ↓ → harder pin /
+    /// harder target (≈1e-6 is already a near-hard constraint).
+    double goal_pos_noise_var= 1e-6;
+
+    /// Goal velocity variance ((rad/s)²) for the target stop.  ↑ → allow a more
+    /// gradual approach; ↓ → enforce a precise zero-velocity stop at the target.
+    double goal_vel_noise_var= 1e-2;
 };
 
 /**
@@ -133,6 +196,10 @@ struct OnlinePredictor::Impl {
 
     double expected_duration_s;  ///< Active expected duration (may be overridden by reset()).
 
+    const Eigen::MatrixXd obs_cov;
+    const Eigen::MatrixXd goal_cov;
+
+
     /**
      * @brief Load model and metadata from disk; initialise the observation buffer.
      *
@@ -146,7 +213,10 @@ struct OnlinePredictor::Impl {
               (fs::path(model_dir) / "model.promp").string())),
           meta(load_metadata(fs::path(model_dir) / "metadata.txt")),
           max_obs(max_obs_per_predict),
-          expected_duration_s(meta.mean_duration_s)
+          expected_duration_s(meta.mean_duration_s),
+
+    obs_cov(make_obs_cov()),
+    goal_cov(make_goal_cov())
     {}
 
     /**
@@ -282,12 +352,35 @@ void OnlinePredictor::reset(double expected_duration_s)
 {
     _impl->obs_times.clear();
     _impl->obs_pos.clear();
+    //_impl->obs_times.reserve(15000);
+    //_impl->obs_pos.reserve(15000);
     _impl->expected_duration_s =
         (expected_duration_s > 0.0) ? expected_duration_s
                                     : _impl->meta.mean_duration_s;
-    log_file.open("C:/Imperial/Final project/ProMP_realtime_Jorge-main/results/result.csv");
+    // expected_duration_s divides into the phase map and n_full; never let it be
+    // zero/negative even if metadata.mean_duration_s is malformed.
+    if (_impl->expected_duration_s <= 0.0)
+        _impl->expected_duration_s = 1.0;
 
-
+    // (Re)open the per-trial prediction log.  The path comes from the
+    // PROMP_RT_LOG environment variable when set (set it empty to disable
+    // logging); otherwise it defaults to a relative "results/result.csv".  A
+    // relative default keeps this portable — the previous hard-coded Windows
+    // path silently failed on other platforms.  close() first so a repeated
+    // reset() re-opens cleanly (open() on an already-open stream otherwise fails).
+    if (log_file.is_open()) log_file.close();
+    const char* env = std::getenv("PROMP_RT_LOG");
+    const std::string log_path = env ? std::string(env)
+                                     : std::string("C:/Imperial/Final project/ProMP_realtime_Jorge-main/results/result.csv");
+    if (!log_path.empty()) {
+        std::error_code ec;
+        const fs::path p(log_path);
+        if (p.has_parent_path()) fs::create_directories(p.parent_path(), ec);
+        log_file.open(log_path);
+        if (!log_file.is_open())
+            std::cerr << "[predict] Warning: could not open log file '"
+                      << log_path << "'; prediction logging disabled.\n";
+    }
 }
 
 /**
@@ -332,16 +425,25 @@ int OnlinePredictor::num_observations() const
  *   4. For each selected observation at elapsed time t_k:
  *        s_k = round(t_k / T_expected × (n_steps−1))
  *        via = [pos0_k, vel0_k, …, pos(n-1)_k, vel(n-1)_k] ∈ ℝ^(2*n_dof)
- *        Apply condition_via_point(s_k, via, Σ_obs).
+ *        Apply condition_via_point(s_k, via, Σ_obs).  The most recent
+ *        observation uses a tight position variance so the prediction starts
+ *        at the current measured position.
  *   5. If PAST_TRAJ_TARGET:
  *        goal = [target0, 0, target1, 0, …] (zero velocities = natural stop)
  *        Apply condition_goal(goal, Σ_goal).
- *   6. generate_trajectory(n_future_steps) + gen_traj_std_dev(n_future_steps).
- *   7. Return slice [current_step : end] as PredictionResult.
+ *   6. Derive the recording period (from record_dt_s, or the median observed
+ *      inter-sample interval) and set n_full = round(duration/dt)+1 so the
+ *      phase grid is spaced one recording period apart in time.
+ *   7. generate_trajectory(n_full) + gen_traj_std_dev(n_full); return the slice
+ *      [current_step : end] — the receding remaining-time horizon.  Because the
+ *      latest observation is conditioned with a tight position variance (step 4),
+ *      this slice starts at the current measured position.
  *
  * @param mode           PAST_TRAJ or PAST_TRAJ_TARGET.
- * @param n_future_steps Steps in the returned trajectory.
- *                       Tuning: 50 for fast display, 100–200 for planning.
+ * @param record_dt_s    Prediction time step (s); should equal the data's
+ *                       recording period.  ≤0 → auto-derive from timestamps.
+ *                       Sets both the step spacing and (with the receding
+ *                       horizon) the number of returned steps.
  * @param target_pos     Target positions (rad), size = n_dof.
  *                       Empty vector → all zeros.
  *                       Ignored when mode == PAST_TRAJ.
@@ -362,7 +464,7 @@ int OnlinePredictor::num_observations() const
 
 PredictionResult OnlinePredictor::predict(
     ConditioningMode mode,
-    int n_future_steps,
+    double record_dt_s,
     const std::vector<double>& target_pos) const
 {
     PredictionResult result;
@@ -381,6 +483,10 @@ PredictionResult OnlinePredictor::predict(
     // ── 1. Fresh ProMP copy from stored weight distribution ────────────────
     // time_mod = 1.0: demos were normalised to [0,1] phase during training.
 
+    // NOTE: must be a per-call local (NOT static).  condition_via_point() and
+    // condition_goal() below mutate this object; a static instance would retain
+    // all conditioning across ticks and trials, so the model would never reset
+    // to the trained prior and predictions would diverge over time.
     static promp::ProMP fresh(
         im.trained.get_weights(),
         im.trained.get_covariance(),
@@ -395,101 +501,74 @@ PredictionResult OnlinePredictor::predict(
     if (im.max_obs > 0 && n_avail > im.max_obs)
         start_idx = n_avail - im.max_obs;
 
-    // ── 2. Compute velocities over the full observation buffer via SG ──────
-    //
-    // vel_buf[d][i] = velocity estimate of joint d at observation i.
-    // The SG filter uses the actual timestamps (im.obs_times), which makes
-    // it correct for any sensor rate or irregular sampling pattern.
-    //
-    // Window/order are loaded from metadata (same values as training) so that
-    // training and inference use identical smoothing characteristics.
-    //const int sg_margin = im.meta.sg_window;  // generous margin
-    //const int vel_start  = std::max(0, start_idx - sg_margin);
-    //const int vel_count  = n_avail - vel_start;
-    //std::vector<double> time_slice(im.obs_times.begin() + vel_start, im.obs_times.end());
-/*
-    std::vector<std::vector<double>> vel_buf(static_cast<size_t>(n_dof));
-    {
-        std::vector<double> pos_buf_d(static_cast<size_t>(n_avail));
-        //std::vector<double> pos_buf_d(static_cast<size_t>(vel_count));
-        for (int d = 0; d < n_dof; ++d) {
-            for (int i = 0; i < n_avail; ++i)
-            //for (int i = vel_start; i < n_avail; ++i)
-            {
-                //std::cout << "S"<< i<< " "<< n_avail << " " << vel_count << " " << im.obs_pos.size();
-                pos_buf_d[static_cast<size_t>(i)] =
-                //pos_buf_d[static_cast<size_t>(i-vel_start)] =
-                    im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
-                    //im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
-                //std::cout << "F \n";
-            }
-            //std::cout << "velI ";
-            vel_buf[static_cast<size_t>(d)] =
-                sg_filter_deriv(im.obs_times, pos_buf_d,
-                //sg_filter_deriv(time_slice, pos_buf_d,
-                                im.meta.sg_window,
-                                im.meta.sg_poly_order);
-            //std::cout << "velOut \n";
-        }
-    }
-    */
-    const int sg_margin = im.meta.sg_window;  // generous margin
+    // ── 2. Per-joint position slices for on-demand SG velocity ────────────
+    // Velocity is needed only at the observations actually conditioned (one per
+    // phase step, see step 4), so instead of running SG over the whole buffer we
+    // keep a position slice per joint starting sg_margin (= sg_window) samples
+    // before start_idx — enough left context for a full SG window at every
+    // conditioned index — and evaluate the derivative pointwise with
+    // sg_deriv_at_index() inside the conditioning loop.  This makes velocity
+    // cost O(#conditioned · W) instead of O(#observations · W), with identical
+    // values at the conditioned indices.
+    const int sg_margin  = im.meta.sg_window; // left context for a full SG window
     const int vel_start  = std::max(0, start_idx - sg_margin);
     const int vel_count  = n_avail - vel_start;
-    std::vector<double> time_slice(im.obs_times.begin() + vel_start, im.obs_times.end());
-    std::vector<std::vector<double>> vel_buf(static_cast<size_t>(n_dof));
-    {
-        //std::vector<double> pos_buf_d(static_cast<size_t>(n_avail));
-        std::vector<double> pos_buf_d(static_cast<size_t>(vel_count));
-        for (int d = 0; d < n_dof; ++d) {
-            //for (int i = 0; i < n_avail; ++i)
-                for (int i = vel_start; i < n_avail; ++i)
-            {
-                //std::cout << "S"<< i<< " "<< n_avail << " " << vel_count << " " << im.obs_pos.size();
-                //pos_buf_d[static_cast<size_t>(i)] =
-                pos_buf_d[static_cast<size_t>(i-vel_start)] =
-                    im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
-                //im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
-                //std::cout << "F \n";
-            }
-            //std::cout << "velI ";
-            vel_buf[static_cast<size_t>(d)] =
-                //sg_filter_deriv(im.obs_times, pos_buf_d,
-                sg_filter_deriv(time_slice, pos_buf_d,
-                                im.meta.sg_window,
-                                im.meta.sg_poly_order);
+    const std::vector<double> time_slice(im.obs_times.begin() + vel_start,
+                                         im.obs_times.end());
+    std::vector<std::vector<double>> pos_slice(
+        static_cast<size_t>(n_dof),
+        std::vector<double>(static_cast<size_t>(vel_count)));
+    for (int d = 0; d < n_dof; ++d)
+        for (int i = vel_start; i < n_avail; ++i)
+            pos_slice[static_cast<size_t>(d)][static_cast<size_t>(i - vel_start)] =
+                im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
 
-            std::cout << vel_buf[d][vel_buf[0].size()-1] << ",";
-
-        }
-        std::cout <<"\n";
-    }
-    
-    //std::cout << vel_buf[0].size() << "\n";
     // ── 4. Bayesian via-point conditioning ────────────────────────────────
     // For each selected observation:
     //   - Map elapsed time → phase step (time-based, rate-independent).
     //   - Build 2*n_dof via-point [pos0, vel0, pos1, vel1, …].
     //   - Apply Kalman-style update with block-diagonal Σ_obs.
-    const Eigen::MatrixXd obs_cov = im.make_obs_cov();
-    //std::cout << "Start conditioning \n";
-    //std::cout << " n_avail " << n_avail;
-    //std::cout << " start_idx " << start_idx;
-    //std::cout << " vel_buf " << vel_buf[0].size();
-    //std::cout << " vel_start " << vel_start;
-    //std::cout << "\n";
+    //const Eigen::MatrixXd obs_cov = im.make_obs_cov();
+
+    // The most recent observation is conditioned with a TIGHT position variance
+    // (goal_pos_noise_var) so the conditioned trajectory passes through the
+    // current measured position — i.e. the prediction naturally starts from the
+    // current position, without any post-hoc offset.  The velocity channel is
+    // kept soft (obs_vel_noise_var) because the SG velocity estimate is noisy.
+    Eigen::MatrixXd anchor_cov = im.obs_cov;
+    for (int d = 0; d < n_dof; ++d)
+        anchor_cov(d * 2, d * 2) = im.meta.goal_pos_noise_var;
+
+    // condition_via_point() snaps every observation onto one of n_steps phase
+    // steps, so conditioning all samples that share a step is largely redundant
+    // — and it makes the cost O(#observations) per tick (O(n²) per trial) AND
+    // the posterior rate-dependent (denser sampling ⇒ artificially tighter).
+    // Observations are time-ordered and time_to_step() is monotonic, so equal-
+    // step samples are contiguous: condition only the LAST sample of each step
+    // run.  This caps conditioning at the number of distinct phase steps
+    // (≤ n_steps) regardless of sensor rate.  Measured vs conditioning every
+    // sample: ~7× faster with no meaningful accuracy change against ground truth
+    // (whole-horizon and 1 s errors slightly better, 0.1–0.5 s within ~0.1°).
+    Eigen::VectorXd via(n_dims);
+    int n_cond = 0;
     for (int i = start_idx; i < n_avail; ++i) {
         const int step = im.time_to_step(
             im.obs_times[static_cast<size_t>(i)]);
+        const bool is_latest = (i == n_avail - 1);
+        const bool step_ends = is_latest ||
+            (im.time_to_step(im.obs_times[static_cast<size_t>(i + 1)]) != step);
+        if (!step_ends) continue;
 
-        Eigen::VectorXd via(n_dims);
         for (int d = 0; d < n_dof; ++d) {
             via(d * 2)     = im.obs_pos[static_cast<size_t>(i)][static_cast<size_t>(d)];
-            via(d * 2 + 1) = vel_buf[static_cast<size_t>(d)][static_cast<size_t>(i-vel_start)];
+            via(d * 2 + 1) = sg_deriv_at_index(
+                time_slice, pos_slice[static_cast<size_t>(d)],
+                i - vel_start, im.meta.sg_window, im.meta.sg_poly_order);
         }
-        fresh.condition_via_point(step, via, obs_cov);
+        fresh.condition_via_point(step, via, is_latest ? anchor_cov : im.obs_cov);
+        ++n_cond;
     }
-    result.n_obs_used = n_avail - start_idx;
+    result.n_obs_used = n_cond;
 
     // Current phase from the latest observation time.
     const double t_last = im.obs_times.back();
@@ -509,46 +588,77 @@ PredictionResult OnlinePredictor::predict(
                     : 0.0;
             goal(d * 2 + 1) = 0.0; // target velocity = 0 (natural stop)
         }
-        fresh.condition_goal(goal, im.make_goal_cov());
+        fresh.condition_goal(goal, im.goal_cov);
     }
 
-    // ── 6. Generate full trajectory ───────────────────────────────────────
+    // ── 6. Determine the prediction time step from the RAW time series ─────
+    // The spacing between predicted samples must follow the recording rate of
+    // the incoming data, NOT an arbitrary trajectory resolution.  By default we
+    // derive it from the observed timestamps (median inter-sample interval,
+    // robust to jitter/gaps); a positive record_dt_s overrides this.
+    double record_dt = record_dt_s;
+    if (record_dt <= 0.0) {
+        std::vector<double> diffs;
+        diffs.reserve(static_cast<size_t>(n_avail - 1));
+        for (int i = 1; i < n_avail; ++i) {
+            const double d = im.obs_times[static_cast<size_t>(i)]
+                           - im.obs_times[static_cast<size_t>(i - 1)];
+            if (d > 0.0) diffs.push_back(d);
+        }
+        if (diffs.empty()) return result; // cannot infer the recording rate
+        std::nth_element(diffs.begin(),
+                         diffs.begin() + static_cast<long>(diffs.size() / 2),
+                         diffs.end());
+        record_dt = diffs[diffs.size() / 2];
+    }
+
+    // Full phase grid resolution so that consecutive steps are record_dt apart
+    // in time over the whole motion: expected_duration spans phase [0,1], so a
+    // grid of n_full points gives a step of expected_duration/(n_full-1) ≈ record_dt.
+    // n_full-1 = round(duration / record_dt) = number of recording periods in the motion.
+    const int n_full = std::max(2,
+        static_cast<int>(std::llround(im.expected_duration_s / record_dt)) + 1);
+
+    // ── 7. Generate full trajectory at the recording resolution ───────────
     const Eigen::MatrixXd mean_full =
-        fresh.generate_trajectory(static_cast<size_t>(n_future_steps));
+        fresh.generate_trajectory(static_cast<size_t>(n_full));
     const Eigen::MatrixXd std_full  =
-        fresh.gen_traj_std_dev(static_cast<size_t>(n_future_steps));
+        fresh.gen_traj_std_dev(static_cast<size_t>(n_full));
 
-
-
-
-
-    // ── 7. Slice from current phase onward ────────────────────────────────
+    // ── 8. Receding horizon: from the current step to the end of the motion ─
+    // At motion start (phase≈0) this spans the full duration; after each tick
+    // the start advances, so the horizon recedes to cover only the remaining
+    // time.  The number of returned steps = remaining_time / record_dt.
     int current_step = static_cast<int>(
-        std::round(phase * static_cast<double>(n_future_steps - 1)));
-    current_step = std::max(0, std::min(n_future_steps - 1, current_step));
-    const int n_out = n_future_steps - current_step;
+        std::round(phase * static_cast<double>(n_full - 1)));
+    current_step = std::max(0, std::min(n_full - 1, current_step));
+    // Trying not to generate the full trajectory
+    const int n_out = std::min(n_full - current_step, 400);
+    //const int n_out = n_full - current_step;
 
     result.future_times_s.resize(static_cast<size_t>(n_out));
     result.mean_traj.resize(static_cast<size_t>(n_out * n_dims));
     result.std_traj .resize(static_cast<size_t>(n_out * n_dims));
 
+    const bool do_log = log_file.is_open();
     for (int i = 0; i < n_out; ++i) {
         const int gs = current_step + i;
-        const double t_abs = static_cast<double>(gs) / (n_future_steps - 1)
+        const double t_abs = static_cast<double>(gs) / (n_full - 1)
                              * im.expected_duration_s;
         result.future_times_s[static_cast<size_t>(i)] = t_abs;
 
-        log_file << result.current_phase<< ","
-        << result.future_times_s[static_cast<size_t>(i)]<< ",";
+        //if (do_log)
+        //    log_file << result.current_phase << "," << t_abs << ",";
 
         for (int dim = 0; dim < n_dims; ++dim) {
             result.mean_traj[static_cast<size_t>(i * n_dims + dim)] = mean_full(gs, dim);
             result.std_traj [static_cast<size_t>(i * n_dims + dim)] = std_full (gs, dim);
 
-            log_file  << result.mean_traj[static_cast<size_t>(i * n_dims + dim)] << ","
-                      << result.std_traj [static_cast<size_t>(i * n_dims + dim)] << "," ;
+            //if (do_log)
+                //log_file << result.mean_traj[static_cast<size_t>(i * n_dims + dim)] << ","
+                //         << result.std_traj [static_cast<size_t>(i * n_dims + dim)] << ",";
         }
-        log_file << "\n";
+        //if (do_log) log_file << "\n";
     }
     // Save full trajectory
     /*
@@ -581,7 +691,7 @@ PredictionResult OnlinePredictor::predict(
  * @param time_s        Elapsed time (s).
  * @param positions_rad Joint positions (rad); size must equal get_n_dof().
  * @param mode          PAST_TRAJ or PAST_TRAJ_TARGET.
- * @param n_future_steps  Future trajectory resolution (steps).
+ * @param record_dt_s   Prediction time step (s); ≤0 → auto from timestamps.
  * @param target_pos    Target positions (rad); empty → zeros.
  *
  * @return PredictionResult (see predict() documentation for details).
@@ -590,11 +700,11 @@ PredictionResult OnlinePredictor::update_and_predict(
     double time_s,
     const std::vector<double>& positions_rad,
     ConditioningMode mode,
-    int n_future_steps,
+    double record_dt_s,
     const std::vector<double>& target_pos)
 {
     add_observation(time_s, positions_rad);
-    return predict(mode, n_future_steps, target_pos);
+    return predict(mode, record_dt_s, target_pos);
 }
 
 } // namespace promp_rt

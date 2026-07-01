@@ -27,7 +27,7 @@
  *
  * ── Dimension layout in result buffers ───────────────────────────────────────
  * PredictionResult::mean_traj and std_traj are flat row-major arrays of size
- * (n_future_steps × 2*n_dof) with interleaved position/velocity columns:
+ * (n_steps × 2*n_dof) with interleaved position/velocity columns:
  *
  *   index = step * (2*n_dof) + dof*2 + channel
  *   channel 0 → position (rad),   channel 1 → velocity (rad/s)
@@ -93,8 +93,9 @@ struct PredictionResult {
     int n_dims = 0;
 
     /**
-     * @brief Absolute time stamps of each predicted step (seconds).
-     * Size: n_future_steps (or fewer if current_phase > 0).
+     * @brief Absolute time stamps of each predicted step (seconds), spaced one
+     * recording period apart.  Spans the receding horizon from the current time
+     * to the end of the motion, so the count shrinks as current_phase grows.
      */
     std::vector<double> future_times_s;
 
@@ -102,6 +103,9 @@ struct PredictionResult {
      * @brief Predicted mean trajectory; size = future_times_s.size() * n_dims.
      * Indexed as mean_traj[step * n_dims + dim].
      * Use mean_pos() / mean_vel() accessors for clarity.
+     * The latest observation is conditioned with a tight position variance, so
+     * the first sample's position starts at (essentially) the current measured
+     * position — no post-hoc offset is applied.
      */
     std::vector<double> mean_traj;
 
@@ -282,12 +286,15 @@ public:
      * @param mode
      *   PAST_TRAJ or PAST_TRAJ_TARGET.
      *
-     * @param n_future_steps
-     *   Number of uniformly-spaced steps in the returned future trajectory.
-     *   The step spacing in time is:
-     *     Δt = expected_duration_s / (n_future_steps − 1)
-     *   Tuning: 50 for fast display, 100–200 for planning.
-     *   Default: 100.
+     * @param record_dt_s
+     *   Time step (seconds) between consecutive predicted samples.  Match this
+     *   to the recording period of the incoming data so the prediction grid
+     *   follows the raw time series rather than an arbitrary resolution.
+     *   ≤ 0 (default) → derive it automatically from the observed timestamps
+     *   (median inter-sample interval).  The returned trajectory then has a
+     *   receding horizon: its length equals the remaining motion time and the
+     *   step count is (expected_duration_s − t_current) / record_dt_s — the full
+     *   duration at the start, shrinking toward zero as the motion completes.
      *
      * @param target_pos
      *   Target joint positions in radians; must have exactly get_n_dof()
@@ -308,7 +315,7 @@ public:
      */
     PredictionResult predict(
         ConditioningMode mode,
-        int n_future_steps = 100,
+        double record_dt_s = -1.0,
         const std::vector<double>& target_pos = {}) const;
 
     /**
@@ -316,12 +323,12 @@ public:
      *
      * Equivalent to:
      *   add_observation(time_s, positions_rad);
-     *   return predict(mode, n_future_steps, target_pos);
+     *   return predict(mode, record_dt_s, target_pos);
      *
      * @param time_s        Elapsed time (s) — see add_observation().
      * @param positions_rad Joint positions (rad) — see add_observation().
      * @param mode          Conditioning mode.
-     * @param n_future_steps  Future trajectory resolution (steps).
+     * @param record_dt_s   Prediction step (s); ≤0 → derive from timestamps.
      * @param target_pos    Target positions (rad); empty → zeros.
      *
      * @return PredictionResult — see predict().
@@ -330,7 +337,7 @@ public:
         double time_s,
         const std::vector<double>& positions_rad,
         ConditioningMode mode,
-        int n_future_steps = 100,
+        double record_dt_s = -1.0,
         const std::vector<double>& target_pos = {});
 
     /**

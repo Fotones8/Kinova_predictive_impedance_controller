@@ -253,9 +253,12 @@ static void print_result(const promp_rt::PredictionResult& r)
  *     Set this if the current motion is known to be faster or slower than
  *     the training demonstrations.
  *
- *   --future-steps N
- *     Resolution of the returned future trajectory (number of steps).
- *     Default: 100.  Reduce for lower output bandwidth at high sensor rates.
+ *   --record-dt DT
+ *     Time step (s) between predicted samples; should match the data's
+ *     recording period so the prediction grid follows the raw time series.
+ *     Default: -1 (auto-derive from the observed timestamps).  The number of
+ *     predicted steps is the receding horizon (remaining motion time) divided
+ *     by this step.
  *
  *   --max-obs N
  *     Cap the number of past observations used per predict() tick (0 = all).
@@ -291,8 +294,9 @@ static int run_predict(const std::vector<std::string>& args)
             "  --mode past_traj|past_traj_target   (default past_traj)\n"
             "  --target v0 v1 … v(n_dof-1)         target joint positions (rad)\n"
             "  --duration D                         override expected duration (s)\n"
-            "  --future-steps N                     future trajectory steps (default 100)\n"
+            "  --record-dt DT                       prediction step in s; <=0 = auto from timestamps\n"
             "  --max-obs N                          obs per tick cap (default 0=all)\n"
+            "  --input PATH                         read observations from file (default: stdin)\n"
             "\n"
             "stdin:  <time_s> <pos0> <pos1> ...  (one per line)\n"
             "stdout: PRED <n> <phase>  then n lines of predictions\n";
@@ -306,10 +310,13 @@ static int run_predict(const std::vector<std::string>& args)
     const std::string model_dir    = args[2];
     const std::string mode_str     = get_arg(args, "--mode", "past_traj");
     const double override_duration = std::stod(get_arg(args, "--duration", "-1"));
-    const int    n_future_steps    = std::stoi(get_arg(args, "--future-steps", "100"));
+    const double record_dt_s       = std::stod(get_arg(args, "--record-dt", "-1"));
     const int    max_obs           = std::stoi(get_arg(args, "--max-obs", "0"));
 
-    const std::string input_path   = get_arg(args, "--input", "0");
+    // Empty default → read observations from stdin (see loop below).  A
+    // non-empty default (e.g. "0") would make the code try to open a file by
+    // that name and the documented stdin mode would be unreachable.
+    const std::string input_path   = get_arg(args, "--input", "");
 
     // Construct predictor first so we can query n_dof for target parsing.
     promp_rt::OnlinePredictor predictor(model_dir, max_obs);
@@ -383,10 +390,10 @@ static int run_predict(const std::vector<std::string>& args)
         auto t_start = std::chrono::high_resolution_clock::now();
         promp_rt::PredictionResult result =
             predictor.update_and_predict(
-                time_s, pos_buf, mode, n_future_steps, target_pos);
+                time_s, pos_buf, mode, record_dt_s, target_pos);
         auto t_end = std::chrono::high_resolution_clock::now();
         double us = std::chrono::duration<double, std::micro>(t_end - t_start).count();
-        //std::cout << result.n_obs_used << "," << us << "\n";
+        std::cout << result.n_obs_used << "," << us << "\n";
         //print_result(result);
     }
 

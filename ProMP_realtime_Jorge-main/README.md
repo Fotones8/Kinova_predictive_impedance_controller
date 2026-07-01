@@ -257,7 +257,7 @@ flag is needed at inference time.
 | `--mode` | `past_traj` | Conditioning mode |
 | `--target t0 t1 … t(n-1)` | zeros | Final target positions (rad) for `past_traj_target`; must supply exactly `n_dof` values |
 | `--duration D` | (from training) | Override expected motion duration (s) |
-| `--future-steps N` | 100 | Resolution of the returned future trajectory |
+| `--record-dt DT` | auto | Prediction step (s); should match the data's recording period. `<=0` derives it from the observed timestamps. Number of steps = receding horizon / step |
 | `--max-obs N` | 0 (all) | Limit past observations per prediction tick (0 = all) |
 
 **Input format (stdin):** one observation per line:
@@ -279,7 +279,7 @@ stdout is flushed after each block for pipe-compatible real-time use.
 **Example – past trajectory only (3-DoF):**
 
 ```bash
-promp_rt predict ./model --mode past_traj --future-steps 50
+promp_rt predict ./model --mode past_traj --record-dt 0.01
 ```
 
 **Example – past trajectory + target (3-DoF):**
@@ -328,7 +328,7 @@ while (running) {
     auto result = predictor.update_and_predict(
         t, pos,
         promp_rt::ConditioningMode::PAST_TRAJ_TARGET,
-        /*n_future_steps=*/100,
+        /*record_dt_s=*/-1.0,   // auto: match the recording period of the data
         target);
 
     if (result.valid) {
