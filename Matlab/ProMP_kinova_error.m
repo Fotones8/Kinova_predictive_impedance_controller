@@ -1,5 +1,5 @@
 
-A = load("ProMp/result6.csv");
+A = load("ProMp/result17.csv");
 
 labels = unique(A(:,1));      % Get unique labels
 groups = cell(length(labels),1);
@@ -98,6 +98,22 @@ legend('Integrated error at 500ms','Integrated error at 100ms','Integrated error
 ylabel('Integrated error (m)')
 xlabel('Time of the trajectory (s)')
 title('X Integrated error in the future prediction at each timestep')
+
+disp('X axis')
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Horizon 10 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(1,1:1063)), max(horizon(1,:)), mean(horizon(1,:)));
+fprintf('Horizon 5 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(2,1:1063)), max(horizon(2,:)), mean(horizon(2,:)));
+fprintf('Horizon 1 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(3,1:1063)), max(horizon(3,:)), mean(horizon(3,:)));
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error 500ms: min %.4f / max %.4f / mean %.4f \n', min(error(1,1:1063))*100, max(error(1,:))*100, mean(error(1,:))*100);
+fprintf('Error 100ms: min %.4f / max %.4f / mean %.4f \n', min(error(2,1:1063))*100, max(error(2,:))*100, mean(error(2,:))*100);
+fprintf('Error 50ms: min %.4f / max %.4f / mean %.4f \n', min(error(3,1:1063))*100, max(error(3,:))*100, mean(error(3,:))*100);
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error_int 500ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(1,1:1063))*100, max(error_int(1,:))*100, mean(error_int(1,:))*100);
+fprintf('Error_int 100ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(2,1:1063))*100, max(error_int(2,:))*100, mean(error_int(2,:))*100);
+fprintf('Error_int 50ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(3,1:1063))*100, max(error_int(3,:))*100, mean(error_int(3,:))*100);
 
 %%
 fig = figure('Name', 'ProMP2');
@@ -211,6 +227,22 @@ ylabel('Integrated error (m)')
 xlabel('Time of the trajectory (s)')
 title('Y Integrated error in the future prediction at each timestep')
 
+disp('Y axis')
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Horizon 10 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(1,1:1063)), max(horizon(1,:)), mean(horizon(1,:)));
+fprintf('Horizon 5 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(2,1:1063)), max(horizon(2,:)), mean(horizon(2,:)));
+fprintf('Horizon 1 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(3,1:1063)), max(horizon(3,:)), mean(horizon(3,:)));
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error 500ms: min %.4f / max %.4f / mean %.4f \n', min(error(1,1:1063))*100, max(error(1,:))*100, mean(error(1,:))*100);
+fprintf('Error 100ms: min %.4f / max %.4f / mean %.4f \n', min(error(2,1:1063))*100, max(error(2,:))*100, mean(error(2,:))*100);
+fprintf('Error 50ms: min %.4f / max %.4f / mean %.4f \n', min(error(3,1:1063))*100, max(error(3,:))*100, mean(error(3,:))*100);
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error_int 500ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(1,1:1063))*100, max(error_int(1,:))*100, mean(error_int(1,:))*100);
+fprintf('Error_int 100ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(2,1:1063))*100, max(error_int(2,:))*100, mean(error_int(2,:))*100);
+fprintf('Error_int 50ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(3,1:1063))*100, max(error_int(3,:))*100, mean(error_int(3,:))*100);
+
 %%
 fig = figure('Name', 'ProMP3');
 vid = VideoWriter('ProMP3.mp4', 'MPEG-4');
@@ -303,3 +335,19 @@ legend('Integrated error at 500ms','Integrated error at 100ms','Integrated error
 ylabel('Integrated error (m)')
 xlabel('Time of the trajectory (s)')
 title('Z Integrated error in the future prediction at each timestep')
+
+disp('Z axis')
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Horizon 10 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(1,1:1063)), max(horizon(1,:)), mean(horizon(1,:)));
+fprintf('Horizon 5 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(2,1:1063)), max(horizon(2,:)), mean(horizon(2,:)));
+fprintf('Horizon 1 cm: min %.2f / max %.2f / mean %.2f \n', min(horizon(3,1:1063)), max(horizon(3,:)), mean(horizon(3,:)));
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error 500ms: min %.4f / max %.4f / mean %.4f \n', min(error(1,1:1063))*100, max(error(1,:))*100, mean(error(1,:))*100);
+fprintf('Error 100ms: min %.4f / max %.4f / mean %.4f \n', min(error(2,1:1063))*100, max(error(2,:))*100, mean(error(2,:))*100);
+fprintf('Error 50ms: min %.4f / max %.4f / mean %.4f \n', min(error(3,1:1063))*100, max(error(3,:))*100, mean(error(3,:))*100);
+
+disp('We discard for the min the last 0.5 second, since if not it would always be 0')
+fprintf('Error_int 500ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(1,1:1063))*100, max(error_int(1,:))*100, mean(error_int(1,:))*100);
+fprintf('Error_int 100ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(2,1:1063))*100, max(error_int(2,:))*100, mean(error_int(2,:))*100);
+fprintf('Error_int 50ms: min %.4f / max %.4f / mean %.4f \n', min(error_int(3,1:1063))*100, max(error_int(3,:))*100, mean(error_int(3,:))*100);

@@ -351,6 +351,24 @@ Eigen::MatrixXd ProMP::gen_traj_std_dev(size_t req_num_steps) const
 	//return Eigen::Map<Eigen::MatrixXd>(diagonal.data(), req_num_steps, _dims);
 }
 
+	// Generate std dev at a certain vector, equivalent to generate_trajectory_at
+	Eigen::MatrixXd ProMP::gen_traj_std_dev_at(const Eigen::VectorXd& phase) const
+{
+	const size_t req_num_steps = static_cast<size_t>(phase.size());
+	const Eigen::MatrixXd phi = generate_basis_function(phase);
+
+	Eigen::MatrixXd std_dev_matrix(req_num_steps, _dims);
+	for (int i = 0; i < static_cast<int>(_dims); ++i) {
+		Eigen::MatrixXd phi_t_covw = phi.transpose()
+			* _cov_w.block(i * _num_bf, i * _num_bf, _num_bf, _num_bf);
+		for (int j = 0; j < static_cast<int>(req_num_steps); ++j)
+			std_dev_matrix(j, i) = phi_t_covw.row(j) * phi.col(j);
+		std_dev_matrix.col(i) = std_dev_matrix.col(i).cwiseSqrt();
+	}
+	return std_dev_matrix;
+}
+
+
 std::vector<Eigen::MatrixXd> ProMP::generate_trajectory_covariance(size_t req_num_steps) const
 {
 	Eigen::MatrixXd phi;

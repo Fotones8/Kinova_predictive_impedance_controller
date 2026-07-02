@@ -204,6 +204,8 @@ namespace promp {
          */
         Eigen::MatrixXd gen_traj_std_dev(size_t req_num_steps = 0) const;
 
+
+        Eigen::MatrixXd gen_traj_std_dev_at(const Eigen::VectorXd& phase) const;
         /**
          * @brief      Generates step covariance matrices for for each step of the trajectory, with a certain number of time steps
          *

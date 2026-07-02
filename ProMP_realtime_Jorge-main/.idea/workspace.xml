@@ -88,11 +88,6 @@
   }
 }</component>
   <component name="RunManager" selected="CMake Application.promp_rt">
-    <configuration default="true" type="CLionExternalRunConfiguration" factoryName="Application" REDIRECT_INPUT="false" ELEVATE="false" USE_EXTERNAL_CONSOLE="false" EMULATE_TERMINAL="false" PASS_PARENT_ENVS_2="true">
-      <method v="2">
-        <option name="CLION.EXTERNAL.BUILD" enabled="true" />
-      </method>
-    </configuration>
     <configuration name="Unnamed" type="CMakeListConfigurationType" factoryName="CMakeListConfigurationFactory">
       <method v="2" />
     </configuration>
@@ -144,7 +139,8 @@
       <workItem from="1782822880138" duration="7274000" />
       <workItem from="1782907056509" duration="65000" />
       <workItem from="1782907230743" duration="234000" />
-      <workItem from="1782907544939" duration="8270000" />
+      <workItem from="1782907544939" duration="8960000" />
+      <workItem from="1782987909450" duration="5441000" />
     </task>
     <servers />
   </component>

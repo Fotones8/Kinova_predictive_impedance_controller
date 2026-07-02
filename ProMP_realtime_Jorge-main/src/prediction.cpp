@@ -612,6 +612,63 @@ PredictionResult OnlinePredictor::predict(
         record_dt = diffs[diffs.size() / 2];
     }
 
+    // ── 6. Compute current phase step and cap future horizon ──────────────
+    const int n_full = std::max(2,
+        static_cast<int>(std::llround(im.expected_duration_s / record_dt)) + 1);
+
+    int current_step = static_cast<int>(
+        std::round(phase * static_cast<double>(n_full - 1)));
+    current_step = std::max(0, std::min(n_full - 1, current_step));
+
+    constexpr int MAX_FUTURE_STEPS = 400;
+
+    // Fixed step size in phase units: one record_dt corresponds to this
+    // phase increment regardless of where we are in the motion.
+    const double phase_step = record_dt / im.expected_duration_s;
+
+    // Future horizon end: always MAX_FUTURE_STEPS steps ahead at record_dt spacing.
+    // Clamp to 1.0 only if the end of the motion is closer than MAX_FUTURE_STEPS steps.
+    const double phase_end = std::min(1.0, phase + MAX_FUTURE_STEPS * phase_step);
+
+    // Actual number of steps — equals MAX_FUTURE_STEPS unless we're near the end.
+    const int n_out = std::max(1,
+        static_cast<int>(std::round((phase_end - phase) / phase_step)) + 1);
+
+    // Phase vector with uniform spacing of exactly phase_step.
+    const Eigen::VectorXd future_phase =
+        Eigen::VectorXd::LinSpaced(n_out, phase, phase_end);
+
+    const Eigen::MatrixXd mean_out = fresh.generate_trajectory_at(future_phase);
+    const Eigen::MatrixXd std_out  = fresh.gen_traj_std_dev_at(future_phase);
+
+    // ── 8. Fill result directly from the n_out × n_dims output matrices ──
+    result.future_times_s.resize(static_cast<size_t>(n_out));
+    result.mean_traj.resize(static_cast<size_t>(n_out * n_dims));
+    result.std_traj .resize(static_cast<size_t>(n_out * n_dims));
+
+    const bool do_log = log_file.is_open();
+    for (int i = 0; i < n_out; ++i) {
+        // Map output index back to absolute time
+        const double phase_i = future_phase(i);
+        result.future_times_s[static_cast<size_t>(i)] =
+            phase_i * im.expected_duration_s;
+
+        //if (do_log)
+        //    log_file << result.current_phase << "," << phase_i * im.expected_duration_s << ",";
+
+        for (int dim = 0; dim < n_dims; ++dim) {
+            result.mean_traj[static_cast<size_t>(i * n_dims + dim)] = mean_out(i, dim);
+            result.std_traj [static_cast<size_t>(i * n_dims + dim)] = std_out (i, dim);
+
+            //if (do_log)
+            //    log_file << result.mean_traj[static_cast<size_t>(i * n_dims + dim)] << ","
+            //             << result.std_traj [static_cast<size_t>(i * n_dims + dim)] << ",";
+        }
+        //if (do_log) log_file << "\n";
+    }
+
+    //ORIGINAL IMPLEMENTATION
+/*
     // Full phase grid resolution so that consecutive steps are record_dt apart
     // in time over the whole motion: expected_duration spans phase [0,1], so a
     // grid of n_full points gives a step of expected_duration/(n_full-1) ≈ record_dt.
@@ -647,19 +704,21 @@ PredictionResult OnlinePredictor::predict(
                              * im.expected_duration_s;
         result.future_times_s[static_cast<size_t>(i)] = t_abs;
 
-        //if (do_log)
-        //    log_file << result.current_phase << "," << t_abs << ",";
+        if (do_log)
+            log_file << result.current_phase << "," << t_abs << ",";
 
         for (int dim = 0; dim < n_dims; ++dim) {
             result.mean_traj[static_cast<size_t>(i * n_dims + dim)] = mean_full(gs, dim);
             result.std_traj [static_cast<size_t>(i * n_dims + dim)] = std_full (gs, dim);
 
-            //if (do_log)
-                //log_file << result.mean_traj[static_cast<size_t>(i * n_dims + dim)] << ","
-                //         << result.std_traj [static_cast<size_t>(i * n_dims + dim)] << ",";
+            if (do_log)
+                log_file << result.mean_traj[static_cast<size_t>(i * n_dims + dim)] << ","
+                         << result.std_traj [static_cast<size_t>(i * n_dims + dim)] << ",";
         }
-        //if (do_log) log_file << "\n";
+        if (do_log) log_file << "\n";
     }
+
+    */
     // Save full trajectory
     /*
     const int n     = static_cast<int>(result.future_times_s.size());
