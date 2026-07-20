@@ -1,0 +1,5 @@
+"C:\Program Files\JetBrains\CLion 2023.3.1\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Release "-DCMAKE_MAKE_PROGRAM=C:/Program Files/JetBrains/CLion 2023.3.1/bin/ninja/win/x64/ninja.exe" -DUSE_CONAN=OFF -DDOWNLOAD_API=OFF -G Ninja -S "C:\Users\ASUS\Desktop\Experimental Codes" -B "C:\Users\ASUS\Desktop\Experimental Codes\cmake-build-release-visual-studio"
+-- MSVC -> forcing use of statically-linked runtime.
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: C:/Users/ASUS/Desktop/Experimental Codes/cmake-build-release-visual-studio

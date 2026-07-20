@@ -1,0 +1,10 @@
+Each folder represents one different subject
+
+Inside, there are 60 csv files, called p1 to p61
+
+p1-p10 contain movement from origin to target A, without obstacle
+p11-p20 contain movement from origin to target B, without obstacle
+p21-p30 contain movement from origin to target C, without obstacle
+p31-p40 contain movement from origin to target A, with obstacle
+p41-p50 contain movement from origin to target B, with obstacle
+p51-p60 contain movement from origin to target C, with obstacle
